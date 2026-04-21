@@ -1,5 +1,13 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
-import { contracts } from "./data.js";
+import { contracts } from "./data.ts";
+
+export type ParsedContractQuery = {
+  year?: string;
+  excludeYear?: string;
+  needAmount?: boolean;
+  compare?: "max";
+  minAmount?: number;
+};
 
 export const tools: ChatCompletionTool[] = [
   {
@@ -10,43 +18,62 @@ export const tools: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          query: {
+          year: {
             type: "string",
-            description: "用户查询条件，比如：金额最大的合同、2023年的合同、金额超过20万的合同"
+            description: "需要包含的年份，例如 2023"
+          },
+          excludeYear: {
+            type: "string",
+            description: "需要排除的年份，例如 2024"
+          },
+          needAmount: {
+            type: "boolean",
+            description: "是否要求合同中必须包含金额字段"
+          },
+          compare: {
+            type: "string",
+            enum: ["max"],
+            description: "是否要做比较，例如最大金额"
+          },
+          minAmount: {
+            type: "number",
+            description: "最小金额阈值，例如 200000"
           }
-        },
-        required: ["query"]
+        }
       }
     }
   }
 ];
 
+function extractAmount(text: string): number {
+  const match = text.match(/金额[:：]\s*(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
 
-export function searchContract(query: string) {
-  const q = query.toLowerCase();
+export function searchContract(query: ParsedContractQuery) {
+  let results = [...contracts];
 
-  // 1. 先按明显条件筛
-  let results = contracts.filter((c) => {
-    if (q.includes("2023")) return c.text.includes("2023");
-    if (q.includes("2024")) return c.text.includes("2024");
-    if (q.includes("2022")) return c.text.includes("2022");
-
-    if (
-      q.includes("金额") ||
-      q.includes("最大") ||
-      q.includes("最贵") ||
-      q.includes("超过")
-    ) {
-      return c.text.includes("金额");
-    }
-
-    return false;
-  });
-
-  // 2. 如果一个都没筛出来，再兜底
-  if (results.length === 0) {
-    results = contracts.slice(0, 2);
+  if (query.year) {
+    results = results.filter((c) => c.text.includes(query.year!));
   }
 
-  return results.slice(0, 3);
+  if (query.excludeYear) {
+    results = results.filter((c) => !c.text.includes(query.excludeYear!));
+  }
+
+  if (query.needAmount) {
+    results = results.filter((c) => /金额[:：]\s*\d+/.test(c.text));
+  }
+
+  if (typeof query.minAmount === "number") {
+    results = results.filter((c) => extractAmount(c.text) > query.minAmount!);
+  }
+
+  // compare=max 这里先不直接做最终答案，只是为了保留候选
+  // 如果需要最大值，至少把有金额的都保住，让模型后面比较
+  if (query.compare === "max") {
+    results = results.filter((c) => /金额[:：]\s*\d+/.test(c.text));
+  }
+
+  return results.slice(0, 5);
 }
