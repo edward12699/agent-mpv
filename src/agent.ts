@@ -1,26 +1,61 @@
 import OpenAI from "openai";
-import type {
-  ChatCompletionMessageParam
-} from "openai/resources/chat/completions.js";
-import { tools, searchContract } from "./tools.ts";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import { tools, searchContract, rankContracts } from "./tools.js";
 
 if (!process.env.DASHSCOPE_API_KEY) {
   throw new Error("缺少 DASHSCOPE_API_KEY，请先设置环境变量");
 }
 
-function safeParseJSON(content: string) {
-    try {
-      return JSON.parse(content);
-    } catch (error) {
-      console.error("\n=== JSON 解析失败 ===");
-      console.error(content);
-      throw error;
-    }
+function classifyError(
+  question: string,
+  toolArgs: any,
+  toolResult: any[],
+  finalResult: any,
+) {
+  const errors: string[] = [];
+
+  // 1️⃣ 参数错误
+  if (question.includes("最大") && toolArgs.compare !== "max") {
+    errors.push("参数错误：缺少 compare=max");
   }
+
+  if (question.includes("不是") && !toolArgs.excludeYear) {
+    errors.push("参数错误：缺少 excludeYear");
+  }
+
+  // 2️⃣ 检索错误
+  if (toolResult.length === 0) {
+    errors.push("检索错误：没有返回任何数据");
+  }
+
+  if (
+    question.includes("不是2024") &&
+    toolResult.some((c) => c.year?.includes("2024"))
+  ) {
+    errors.push("检索错误：返回了不该包含的2024数据");
+  }
+
+  // 3️⃣ 推理错误
+  if (finalResult?.matchedContracts?.length === 0 && toolResult.length > 0) {
+    errors.push("推理错误：有数据但没有选出结果");
+  }
+
+  return errors;
+}
+
+function safeParseJSON(content: string) {
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("\n=== JSON 解析失败 ===");
+    console.error(content);
+    throw error;
+  }
+}
 
 const client = new OpenAI({
   apiKey: process.env.DASHSCOPE_API_KEY,
-  baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
 });
 
 export async function runAgent(question: string) {
@@ -28,105 +63,111 @@ export async function runAgent(question: string) {
     {
       role: "system",
       content: `
-你是一个合同分析助手。
+你是一个合同分析 Agent。
+
+你可以使用这些工具：
+1. search_contract：根据条件检索合同，返回结构化合同数据
+2. rank_contracts：对结构化合同按金额排序
 
 规则：
-1. 涉及合同、金额、日期、筛选、比较的问题，必须调用 search_contract
-2. 调用工具时，必须把用户问题拆成结构化参数
-3. 如果用户问“不是2024年的合同”，要把 excludeYear 设为 "2024"
-4. 如果用户问“2023年的合同”，要把 year 设为 "2023"
-5. 如果用户问“金额最大的合同”，要把 needAmount=true，并把 compare 设为 "max"
-6. 如果用户问“金额超过20万的合同”，要把 minAmount 设为 200000
-7. 拿到工具结果后，必须基于结果回答，不能凭空猜
-`
+1. 涉及合同、金额、日期、筛选、比较的问题，必须先调用 search_contract
+2. 如果用户要找最大金额、最高费用、最高价款，必须在 search_contract 之后调用 rank_contracts
+3. 不要自己从 rawText 里猜金额，优先使用工具返回的 amount 字段
+4. amount 为 null 的合同不能参与金额排序
+5. 如果金额相同，amountConfidence=exact 优先于 approximate
+6. 最终回答必须基于工具返回结果
+7. 严禁在同一轮同时调用 search_contract 和 rank_contracts
+8. rank_contracts 的 contracts 参数必须来自上一轮 search_contract 的工具返回结果
+9. 如果没有拿到 search_contract 返回结果，不允许调用 rank_contracts
+`,
     },
     {
       role: "user",
-      content: question
-    }
+      content: question,
+    },
   ];
 
   console.log("\n=== 用户问题 ===");
   console.log(question);
 
-  const first = await client.chat.completions.create({
-    model: "qwen-plus",
-    messages,
-    tools,
-    tool_choice: "auto"
-  });
-
-  const msg = first.choices[0].message;
-
-  console.log("\n=== 第一次模型输出 ===");
-  console.log(JSON.stringify(msg, null, 2));
-
-  if (msg.tool_calls && msg.tool_calls.length > 0) {
-    const toolCall = msg.tool_calls[0];
-
-    if (toolCall.type !== "function") {
-      throw new Error("仅支持 function 工具调用");
-    }
-
-    const args = JSON.parse(toolCall.function.arguments);
-
-    console.log("\n=== 工具调用参数 ===");
-    console.log(args);
-
-    const toolResult = searchContract(args);
-
-    console.log("\n=== 工具返回结果 ===");
-    console.log(JSON.stringify(toolResult, null, 2));
-
-    messages.push(msg);
-
-    messages.push({
-      role: "tool",
-      tool_call_id: toolCall.id,
-      content: JSON.stringify(toolResult)
+  for (let step = 1; step <= 5; step++) {
+    const response = await client.chat.completions.create({
+      model: "qwen-plus",
+      messages,
+      tools,
+      tool_choice: "auto",
     });
 
-    messages.push({
-        role: "system",
-        content: `
-      你现在要基于工具返回的数据，输出严格 JSON，不要输出任何额外解释。
-      
-      返回格式如下：
-      {
-        "matchedContracts": [合同ID数组],
-        "reasoning": "简要说明你是如何根据数据得出结果的",
-        "finalAnswer": "给用户看的最终结论"
-      }
-      
-      要求：
-      1. matchedContracts 必须是数组
-      2. reasoning 必须简洁
-      3. finalAnswer 必须是给用户看的最终一句话
-      4. 只返回 JSON，不要使用 markdown，不要加代码块
-      `
-      });
-      
-      const second = await client.chat.completions.create({
-        model: "qwen-plus",
-        messages,
-        response_format: { type: "json_object" }
-      });
-      
-      const raw = second.choices[0].message.content ?? "{}";
-      
-      console.log("\n=== 第二次模型原始输出 ===");
+    const msg = response.choices[0].message;
+
+    console.log(`\n=== 第 ${step} 次模型输出 ===`);
+    console.log(JSON.stringify(msg, null, 2));
+
+    if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      const raw = msg.content ?? "{}";
+
+      console.log("\n=== 最终模型输出 ===");
       console.log(raw);
-      
-      const parsed = safeParseJSON(raw);
-      
-      console.log("\n=== 结构化结果 ===");
-      console.log(JSON.stringify(parsed, null, 2));
-      
-      return parsed;
+
+      return raw;
+    }
+
+    const toolCalls = msg.tool_calls ?? [];
+
+    const hasSearchAndRankInSameTurn =
+      toolCalls.some((t) => t.function.name === "search_contract") &&
+      toolCalls.some((t) => t.function.name === "rank_contracts");
+
+    const executableToolCalls = hasSearchAndRankInSameTurn
+      ? toolCalls.filter((t) => t.function.name === "search_contract")
+      : toolCalls;
+
+    let finalMsg = msg;
+
+    if (hasSearchAndRankInSameTurn) {
+      console.log("\n=== 修正非法工具链，只保留 search_contract ===");
+
+      finalMsg = {
+        ...msg,
+        tool_calls: toolCalls.filter(
+          (t) => t.function.name === "search_contract",
+        ),
+      };
+    }
+
+    messages.push(finalMsg);
+
+    for (const toolCall of executableToolCalls) {
+      if (toolCall.type !== "function") {
+        throw new Error("仅支持 function 工具调用");
+      }
+
+      const name = toolCall.function.name;
+      const args = JSON.parse(toolCall.function.arguments);
+
+      console.log("\n=== 工具调用 ===");
+      console.log(name, args);
+
+      let toolResult: unknown;
+
+      if (name === "search_contract") {
+        toolResult = searchContract(args);
+      } else if (name === "rank_contracts") {
+        toolResult = rankContracts(args);
+      } else {
+        throw new Error(`未知工具：${name}`);
+      }
+
+      console.log("\n=== 工具返回结果 ===");
+      console.log(JSON.stringify(toolResult, null, 2));
+
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(toolResult),
+      });
+    }
   }
 
-  console.log("\n=== 未调用工具，直接回答 ===");
-  console.log(msg.content);
-
-  return msg.content;
+  throw new Error("Agent 超过最大工具调用轮数");
 }
