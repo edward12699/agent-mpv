@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
-import { tools, searchContract, rankContracts } from "./tools.js";
+import { tools, searchContract, rankContracts } from "./tools";
 
-if (!process.env.DASHSCOPE_API_KEY) {
-  throw new Error("缺少 DASHSCOPE_API_KEY，请先设置环境变量");
+function requireApiKey() {
+  if (!process.env.DASHSCOPE_API_KEY) {
+    throw new Error("缺少 DASHSCOPE_API_KEY，请先设置环境变量");
+  }
 }
 
 function classifyError(
@@ -58,7 +60,22 @@ const client = new OpenAI({
   baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
 });
 
-export async function runAgent(question: string) {
+export type AgentStep = {
+  tool: string;
+  args: Record<string, unknown>;
+  result: unknown;
+};
+
+export type AgentTrace = {
+  question: string;
+  steps: AgentStep[];
+  finalAnswer: string;
+};
+
+export async function runAgentWithTrace(question: string): Promise<AgentTrace> {
+  requireApiKey();
+
+  const steps: AgentStep[] = [];
   const messages: ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -109,10 +126,16 @@ export async function runAgent(question: string) {
       console.log("\n=== 最终模型输出 ===");
       console.log(raw);
 
-      return raw;
+      return {
+        question,
+        steps,
+        finalAnswer: raw,
+      };
     }
 
-    const toolCalls = msg.tool_calls ?? [];
+    const toolCalls = (msg.tool_calls ?? []).filter(
+      (t) => t.type === "function",
+    );
 
     const hasSearchAndRankInSameTurn =
       toolCalls.some((t) => t.function.name === "search_contract") &&
@@ -138,10 +161,6 @@ export async function runAgent(question: string) {
     messages.push(finalMsg);
 
     for (const toolCall of executableToolCalls) {
-      if (toolCall.type !== "function") {
-        throw new Error("仅支持 function 工具调用");
-      }
-
       const name = toolCall.function.name;
       const args = JSON.parse(toolCall.function.arguments);
 
@@ -161,6 +180,12 @@ export async function runAgent(question: string) {
       console.log("\n=== 工具返回结果 ===");
       console.log(JSON.stringify(toolResult, null, 2));
 
+      steps.push({
+        tool: name,
+        args,
+        result: toolResult,
+      });
+
       messages.push({
         role: "tool",
         tool_call_id: toolCall.id,
@@ -170,4 +195,9 @@ export async function runAgent(question: string) {
   }
 
   throw new Error("Agent 超过最大工具调用轮数");
+}
+
+export async function runAgent(question: string) {
+  const trace = await runAgentWithTrace(question);
+  return trace.finalAnswer;
 }

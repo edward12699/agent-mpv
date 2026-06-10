@@ -1,4 +1,4 @@
-import { runAgent } from "./agent.js";
+import { runAgentWithTrace } from "./agent";
 
 async function main() {
   const questions = [
@@ -11,10 +11,10 @@ async function main() {
   ];
 
   for (const q of questions) {
-    const result = await runAgent(q);
+    const trace = await runAgentWithTrace(q);
 
     console.log("\n=== 最终结构化展示 ===");
-    console.log(result);
+    console.log(JSON.stringify(trace, null, 2));
 
     console.log("\n==============================\n");
   }

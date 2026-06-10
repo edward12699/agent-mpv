@@ -1,5 +1,5 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
-import { contracts } from "./data.ts";
+import { contracts } from "./data";
 
 export type ParsedContractQuery = {
   year?: string;

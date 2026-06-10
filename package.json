@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --import tsx gcl.ts",
+    "dev": "next dev",
+    "build": "next build",
+    "web": "next dev",
+    "agent": "node --import tsx src/index.ts",
+    "start": "next start",
     "debug": "node --import tsx --inspect-brk gcl.ts"
   },
   "keywords": [],
@@ -16,10 +20,15 @@
   },
   "type": "module",
   "dependencies": {
-    "openai": "^6.34.0"
+    "next": "^15.5.18",
+    "openai": "^6.34.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
