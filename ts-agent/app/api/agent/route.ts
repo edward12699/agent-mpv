@@ -28,7 +28,9 @@ async function runPythonAgent(question: string) {
   const pyRoot = path.join(repoRoot, "py-agent");
   const venvPython = path.join(
     pyRoot,
-    process.platform === "win32" ? "venv\\Scripts\\python.exe" : "venv/bin/python",
+    process.platform === "win32"
+      ? "venv\\Scripts\\python.exe"
+      : "venv/bin/python",
   );
   const pythonExecutable = fs.existsSync(venvPython) ? venvPython : "python3";
   const script = `
@@ -62,10 +64,7 @@ export async function POST(req: Request) {
     const question = body?.question?.trim();
 
     if (!question) {
-      return NextResponse.json(
-        { error: "请输入问题" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "请输入问题" }, { status: 400 });
     }
 
     const backend = resolveBackend(body?.backend);
@@ -85,8 +84,7 @@ export async function POST(req: Request) {
       finalAnswer: trace.finalAnswer,
     });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Agent 执行失败";
+    const message = err instanceof Error ? err.message : "Agent 执行失败";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

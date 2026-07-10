@@ -6,6 +6,7 @@ A small monorepo containing two agent subprojects.
 The main TypeScript contract analysis agent lives under `ts-agent/` and uses a tool-driven workflow.
 
 The `ts-agent/` agent flow uses these tools:
+
 - `search_contract` for retrieving contract candidates from structured data
 - `rank_contracts` for sorting those candidates by amount
 
