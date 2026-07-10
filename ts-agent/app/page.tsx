@@ -9,10 +9,13 @@ type AgentStep = {
 };
 
 type AgentResponse = {
+  backend?: string;
   question: string;
   steps: AgentStep[];
   finalAnswer: string;
 };
+
+type BackendOption = "ts" | "python";
 
 const EXAMPLES = [
   "找2023年金额最大的合同",
@@ -38,6 +41,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AgentResponse | null>(null);
+  const [backend, setBackend] = useState<BackendOption>("ts");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +56,7 @@ export default function Home() {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ question: q, backend }),
       });
 
       const data = await res.json();
@@ -82,6 +86,21 @@ export default function Home() {
         <label htmlFor="question" style={styles.label}>
           请输入问题
         </label>
+        <div style={styles.controlsRow}>
+          <label htmlFor="backend" style={styles.label}>
+            选择后端
+          </label>
+          <select
+            id="backend"
+            value={backend}
+            onChange={(e) => setBackend(e.target.value as BackendOption)}
+            style={styles.select}
+            disabled={loading}
+          >
+            <option value="ts">ts-agent 后台</option>
+            <option value="python">py-agent 后台</option>
+          </select>
+        </div>
         <textarea
           id="question"
           value={question}
@@ -197,6 +216,11 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: 12,
   },
+  controlsRow: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  },
   label: {
     fontSize: 14,
     fontWeight: 500,
@@ -212,6 +236,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#1a2332",
     color: "#e7ecf3",
     resize: "vertical",
+    outline: "none",
+  },
+  select: {
+    width: "fit-content",
+    minWidth: 180,
+    padding: "10px 12px",
+    fontSize: 14,
+    borderRadius: 8,
+    border: "1px solid #2a3544",
+    background: "#1a2332",
+    color: "#e7ecf3",
     outline: "none",
   },
   button: {

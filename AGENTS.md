@@ -46,3 +46,9 @@ The project also includes a new Python package under `py-agent/`.
 ## When updating this file
 
 Keep this file focused on project-specific behavior and tooling conventions. Do not duplicate generic Next.js or TypeScript guidance.
+
+## Model and tool usage policy
+
+- Do not use Claude Code or any Claude-specific workflow for this repository.
+- Follow the existing repository instructions and use the available local tools and project conventions instead.
+- If a task can be completed with the current workspace tools, prefer that over invoking external Claude-based workflows.
