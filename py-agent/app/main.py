@@ -1,8 +1,9 @@
-from .agent import Agent
+from .agent_langchain import Agent
+from .llm import create_default_llm
 
 
 def main():
-    agent = Agent()
+    agent = Agent(llm=create_default_llm())
     questions = [
         "找2023年金额最大的合同",
         "找不是2024年的最大金额合同",

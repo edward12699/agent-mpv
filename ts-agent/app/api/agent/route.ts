@@ -33,19 +33,9 @@ async function runPythonAgent(question: string) {
       : "venv/bin/python",
   );
   const pythonExecutable = fs.existsSync(venvPython) ? venvPython : "python3";
-  const script = `
-import json
-import os
-import sys
-sys.path.insert(0, os.getcwd())
-from app.agent import Agent
-result = Agent().run(sys.argv[1])
-print(json.dumps(result))
-`;
-
   const { stdout } = await execFileAsync(
     pythonExecutable,
-    ["-c", script, question],
+    ["-m", "app.runner", question],
     {
       cwd: pyRoot,
       env: {
@@ -55,7 +45,8 @@ print(json.dumps(result))
     },
   );
 
-  return JSON.parse(stdout.trim());
+  const output = stdout.trim();
+  return JSON.parse(output);
 }
 
 export async function POST(req: Request) {
