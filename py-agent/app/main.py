@@ -1,17 +1,19 @@
-from .agent_langchain import Agent
-from .llm import create_default_llm
+from fastapi import FastAPI
+from .routes import router
 
 
-def main():
-    agent = Agent(llm=create_default_llm())
-    questions = [
-        "找2023年金额最大的合同",
-        "找不是2024年的最大金额合同",
-    ]
-    for question in questions:
-        trace = agent.run(question)
-        print(trace)
+app = FastAPI(
+    title="Contract Agent API",
+    description="AI 合同分析服务",
+)
 
+app.include_router(
+    router,
+    prefix="/api"
+)
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+def root():
+    return {
+        "message": "Contract Agent API running"
+    }
