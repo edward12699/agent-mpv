@@ -96,6 +96,11 @@ class Agent:
         result = self.agent.invoke({"messages": [HumanMessage(content=question)]})
         messages = result["messages"]
 
+        # for msg in messages:
+        #     print("================")
+        #     print(type(msg))
+        #     print(msg)
+
         return {
             "question": question,
             "steps": extract_steps(messages),

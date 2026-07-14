@@ -2,6 +2,8 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
+
+from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -77,6 +79,59 @@ class OpenAICompatibleLLM:
 
 
 class RuleBasedLLM:
+    def __init__(self):
+        self.bound_tools = []
+
+    def bind_tools(self, tools, **kwargs):
+        self.bound_tools = tools or []
+        return self
+
+    def invoke(self, messages, **kwargs):
+        normalized_messages = self._normalize_messages(messages)
+        response = self.chat(normalized_messages, tools=self.bound_tools)
+
+        if response.tool_calls:
+            return AIMessage(
+                content=response.content or "",
+                tool_calls=[
+                    {
+                        "id": call.id,
+                        "name": call.name,
+                        "args": call.arguments,
+                        "type": "tool_call",
+                    }
+                    for call in response.tool_calls
+                ],
+            )
+
+        return AIMessage(content=response.content or "")
+
+    def _normalize_messages(self, messages):
+        normalized = []
+        for message in messages:
+            if isinstance(message, dict):
+                role = message.get("role")
+                content = message.get("content")
+                tool_call_id = message.get("tool_call_id")
+            else:
+                role = getattr(message, "role", None)
+                if role is None:
+                    message_type = getattr(message, "type", None)
+                    if message_type == "human":
+                        role = "user"
+                    elif message_type == "ai":
+                        role = "assistant"
+                    elif message_type == "tool":
+                        role = "tool"
+                content = getattr(message, "content", None)
+                tool_call_id = getattr(message, "tool_call_id", None)
+
+            normalized_message: dict[str, Any] = {"role": role or "user", "content": content}
+            if tool_call_id is not None:
+                normalized_message["tool_call_id"] = tool_call_id
+            normalized.append(normalized_message)
+        return normalized
+
     def chat(self, messages, tools):
         last_message = messages[-1]
 
@@ -166,6 +221,7 @@ def create_default_llm():
         return RuleBasedLLM()
 
     api_key = os.environ.get("DASHSCOPE_API_KEY")
+    co
     if not api_key:
         return RuleBasedLLM()
 
@@ -178,7 +234,7 @@ def create_default_llm():
     return ChatOpenAI(
         model=os.environ.get("PY_AGENT_MODEL", "qwen-plus"),
         api_key=api_key,
-        api_base="https://dashscope.aliyuncs.com/compatible-mode/v1
+        api_base="https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
 
 TOOLS = [

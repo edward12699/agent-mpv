@@ -1,7 +1,7 @@
 import json
 import sys
 
-from .agent import Agent
+from .agent_langchain import Agent
 from .llm import create_default_llm
 
 
