@@ -104,7 +104,7 @@ class Agent:
         return {
             "question": question,
             "steps": extract_steps(messages),
-            "finalAnswer": extract_final_answer(messages),
+            "answer": extract_final_answer(messages),
         }
 
 
