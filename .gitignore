@@ -1,6 +1,13 @@
+# Monorepo ignore rules
 node_modules/
-.next/
+.tsbuildinfo
 .env
 .env.local
 *.log
 .DS_Store
+
+# Python virtual environment
+py-agent/venv/
+
+# Next.js build output
+ts-agent/.next/
