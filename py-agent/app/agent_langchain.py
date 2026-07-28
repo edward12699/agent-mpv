@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
 from typing import Any
+
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -37,8 +39,14 @@ def create_default_chat_model():
     base_url = os.environ.get("OPENAI_BASE_URL")
     if os.environ.get("DASHSCOPE_API_KEY") and not base_url:
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-    return ChatOpenAI(model=model, api_key=api_key, base_url=base_url)
+    request_timeout = float(
+        os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "30")
+    )
+    max_retries = int(
+        os.environ.get("LLM_MAX_RETRIES", "1")
+    )
+    return ChatOpenAI(model=model, api_key=api_key, base_url=base_url, timeout=request_timeout,
+        max_retries=max_retries,)
 
 
 def json_loads(value: Any) -> Any:
@@ -83,7 +91,7 @@ def extract_final_answer(messages: list[Any]) -> str:
 
 
 class Agent:
-    def __init__(self, llm=None, debug: bool = False):
+    def __init__(self, llm=None, debug: bool = False, timeout_seconds: float | None = None,):
         self.llm = llm or create_default_chat_model()
         self.agent = create_agent(
             model=self.llm,
@@ -91,11 +99,23 @@ class Agent:
             system_prompt=SYSTEM_PROMPT,
             debug=debug,
         )
+        self.timeout_seconds = (
+            timeout_seconds
+            if timeout_seconds is not None
+            else float(
+                os.environ.get(
+                    "AGENT_TIMEOUT_SECONDS",
+                    "60",
+                )
+            )
+        )
 
-    def run(self, question: str) -> dict[str, Any]:
-        result = self.agent.invoke({"messages": [HumanMessage(content=question)]})
-        messages = result["messages"]
-
+    async def run(self, question: str) -> dict[str, Any]:
+        # result = self.agent.invoke({"messages": [HumanMessage(content=question)]})
+        # messages = result["messages"]
+        async with asyncio.timeout(self.timeout_seconds):
+            result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
+            messages = result["messages"]
         # for msg in messages:
         #     print("================")
         #     print(type(msg))
@@ -108,5 +128,5 @@ class Agent:
         }
 
 
-def run(question: str) -> dict[str, Any]:
+async def run(question: str) -> dict[str, Any]:
     return Agent().run(question)

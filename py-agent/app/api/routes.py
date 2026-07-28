@@ -24,15 +24,28 @@ router = APIRouter(
  response_model=ChatResponse,
  status_code=status.HTTP_200_OK
  )
-def chat(
+async def chat(
     request: ChatRequest,
     # ???
     agent: Annotated[Agent, Depends(get_agent)],
 ) -> ChatResponse:
     try:
-        result = agent.run(request.question)
+        result = await agent.run(request.question)
         # return ChatResponse.model_validate(result)
         return result
+    
+    # 这个要在前面，不然timeouteror也会被当成exception处理
+    except TimeoutError as exc:
+        logger.warning(
+            "Agent 执行超时，question=%s",
+            request.question,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Agent 响应超时，请稍后重试",
+        ) from exc
+    
     except Exception as exc:
         logger.exception(
             "Agent 执行失败，question=%s",
