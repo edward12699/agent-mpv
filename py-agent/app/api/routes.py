@@ -1,13 +1,13 @@
-from fastapi import APIRouter,Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.schemas.chat import (
+    AgentStep,
     ChatRequest,
-    ChatResponse 
+    ChatResponse,
 )
 import logging
 from typing import Annotated
 from app.agent_langchain import Agent
 from app.api.dependencies import get_agent
-from app.api.schemas.chat import ChatRequest, ChatResponse
 
 router = APIRouter()
 
@@ -31,9 +31,8 @@ async def chat(
 ) -> ChatResponse:
     try:
         result = await agent.run(request.question)
-        # return ChatResponse.model_validate(result)
         return result
-    
+
     # 这个要在前面，不然timeouteror也会被当成exception处理
     except TimeoutError as exc:
         logger.warning(
@@ -53,5 +52,5 @@ async def chat(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Agent 执行失败",
+            detail="Agent 执行失败，请稍后重试",
         ) from exc
