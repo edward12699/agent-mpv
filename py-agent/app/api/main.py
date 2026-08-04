@@ -1,32 +1,32 @@
 from fastapi import FastAPI
-from .routes import router
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-load_dotenv()
 
+from app.api.routes import router
+from app.core.config import get_settings
+
+
+settings = get_settings()
 
 app = FastAPI(
-    title="Contract Agent API",
+    title=settings.app_name,
+    version=settings.app_version,
     description="AI 合同分析服务",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
-app.include_router(
-    router,
-    prefix="/api"
-)
+app.include_router(router, prefix="/api")
 
 
-@app.get("/health",tags=["Health"])
-def health() -> dict[str,str]:
+@app.get("/health", tags=["System"])
+def health() -> dict[str, str]:
     return {
-        "status": "ok"
+        "status": "ok",
+        "version": settings.app_version,
     }
-

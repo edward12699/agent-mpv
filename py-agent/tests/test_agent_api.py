@@ -4,14 +4,14 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import get_agent
+from app.api.dependencies import get_agent_service
 from app.api.main import app
 
 
-class SuccessAgent:
-    """模拟正常运行的 Agent。"""
+class SuccessAgentService:
+    """模拟正常运行的 Agent Service。"""
 
-    async def run(self, question: str) -> dict[str, Any]:
+    async def chat(self, question: str) -> dict[str, Any]:
         return {
             "question": question,
             "steps": [
@@ -33,17 +33,17 @@ class SuccessAgent:
         }
 
 
-class ErrorAgent:
-    """模拟 Agent 发生普通异常。"""
+class ErrorAgentService:
+    """模拟 Agent Service 发生普通异常。"""
 
-    async def run(self, question: str) -> dict[str, Any]:
+    async def chat(self, question: str) -> dict[str, Any]:
         raise RuntimeError("模拟模型服务异常")
 
 
-class TimeoutAgent:
-    """模拟 Agent 整体执行超时。"""
+class TimeoutAgentService:
+    """模拟 Agent Service 整体执行超时。"""
 
-    async def run(self, question: str) -> dict[str, Any]:
+    async def chat(self, question: str) -> dict[str, Any]:
         raise TimeoutError("模拟 Agent 超时")
 
 
@@ -71,13 +71,13 @@ def test_health(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
+        "version": "0.1.0",
     }
 
 
 
 def test_chat_success(client: TestClient) -> None:
-    # Arrange：用假 Agent 替换正式 Agent
-    app.dependency_overrides[get_agent] = lambda: SuccessAgent()
+    app.dependency_overrides[get_agent_service] = lambda: SuccessAgentService()
 
     # Act：发送请求
     response = client.post(
@@ -127,7 +127,7 @@ def test_chat_validation_error(
     client: TestClient,
     payload: dict[str, Any],
 ) -> None:
-    app.dependency_overrides[get_agent] = lambda: SuccessAgent()
+    app.dependency_overrides[get_agent_service] = lambda: SuccessAgentService()
 
     response = client.post(
         "/api/agent/chat",
@@ -140,7 +140,7 @@ def test_chat_validation_error(
 
 
 def test_chat_agent_error(client: TestClient) -> None:
-    app.dependency_overrides[get_agent] = lambda: ErrorAgent()
+    app.dependency_overrides[get_agent_service] = lambda: ErrorAgentService()
 
     response = client.post(
         "/api/agent/chat",
@@ -157,7 +157,7 @@ def test_chat_agent_error(client: TestClient) -> None:
 
 
 def test_chat_agent_timeout(client: TestClient) -> None:
-    app.dependency_overrides[get_agent] = lambda: TimeoutAgent()
+    app.dependency_overrides[get_agent_service] = lambda: TimeoutAgentService()
 
     response = client.post(
         "/api/agent/chat",
