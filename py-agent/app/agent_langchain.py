@@ -130,7 +130,7 @@ class Agent:
                     "tools":
                         [
                             step["tool"]
-                            for step in steps
+                            for step in extract_steps(messages)
                         ]
                 }
             )
