@@ -10,6 +10,11 @@ from langchain_openai import ChatOpenAI
 from .core.config import Settings, get_settings
 from .tool import rank_contracts, search_contract
 
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
 
 SYSTEM_PROMPT = """
 你是一个合同分析 Agent。
@@ -98,15 +103,43 @@ class Agent:
         )
 
     async def run(self, question: str) -> dict[str, Any]:
+        start = time.time()
+        logger.info({
+            "event": "agent_run_start",
+            "question": question,
+        })
         async with asyncio.timeout(self.settings.agent_timeout_seconds):
             result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
             messages = result["messages"]
+            duration = (
+                time.time() - start
+            ) * 1000
+            
+            logger.info(
+                {
+                    "event":"agent_finished",
+                    "duration_ms":
+                    round(duration,2),
+                }
+            )
 
-        return {
-            "question": question,
-            "steps": extract_steps(messages),
-            "answer": extract_final_answer(messages),
-        }
+            logger.info(
+                {
+                    "event":
+                        "agent_tools",
+                    "tools":
+                        [
+                            step["tool"]
+                            for step in steps
+                        ]
+                }
+            )
+
+            return {
+                "question": question,
+                "steps": extract_steps(messages),
+                "answer": extract_final_answer(messages),
+            }
 
 
 async def run(question: str) -> dict[str, Any]:

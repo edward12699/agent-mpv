@@ -170,3 +170,28 @@ def test_chat_agent_timeout(client: TestClient) -> None:
     assert response.json() == {
         "detail": "Agent 响应超时，请稍后重试",
     }
+
+def test_request_id(
+    client
+):
+    response = client.get("/health")
+
+    assert (
+        "X-Request-ID"
+        in response.headers
+    )
+
+
+def test_cors_preflight(client: TestClient) -> None:
+    response = client.options(
+        "/api/agent/chat",
+        headers={
+            "Origin": "http://localhost:3002",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "http://localhost:3002"
+    )
