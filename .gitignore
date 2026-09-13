@@ -1,11 +1,17 @@
 # Monorepo ignore rules
 node_modules/
 .tsbuildinfo
+.env
+.env.*
+!.env.example
 *.log
 .DS_Store
 
 # Python virtual environment
 py-agent/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # Next.js build output
 ts-agent/.next/

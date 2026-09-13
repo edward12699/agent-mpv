@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 from typing import Any
 
 
@@ -10,6 +9,11 @@ from langchain_openai import ChatOpenAI
 
 from .core.config import Settings, get_settings
 from .tool import rank_contracts, search_contract
+
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """
@@ -31,22 +35,14 @@ SYSTEM_PROMPT = """
 TOOLS = [search_contract, rank_contracts]
 
 
-def create_default_chat_model(
-     settings: Settings,
-) -> ChatOpenAI:
+def create_default_chat_model(settings: Settings) -> ChatOpenAI:
     return ChatOpenAI(
-
-    model=settings.agent_model,
-
-    api_key=settings.api_key,
-
-    base_url=settings.base_url,
-
-    timeout=settings.llm_request_timeout_seconds,
-
-    max_retries=settings.llm_max_retries,
-
-)
+        model=settings.agent_model,
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        timeout=settings.llm_request_timeout_seconds,
+        max_retries=settings.llm_max_retries,
+    )
 
 
 def json_loads(value: Any) -> Any:
@@ -93,44 +89,58 @@ def extract_final_answer(messages: list[Any]) -> str:
 class Agent:
     def __init__(
         self,
+        llm=None,
         settings: Settings | None = None,
-        llm=None, 
-        debug: bool = False, 
-        timeout_seconds: float | None = None,
+        debug: bool | None = None,
     ):
         self.settings = settings or get_settings()
-        self.llm = llm or create_default_chat_model(
-            self.settings
-        )
-        self.llm = llm or create_default_chat_model()
+        self.llm = llm or create_default_chat_model(self.settings)
         self.agent = create_agent(
             model=self.llm,
             tools=TOOLS,
             system_prompt=SYSTEM_PROMPT,
-            debug=(
-                self.settings.debug
-                if debug is None
-                else debug
-            ),
+            debug=self.settings.debug if debug is None else debug,
         )
 
     async def run(self, question: str) -> dict[str, Any]:
-        # result = self.agent.invoke({"messages": [HumanMessage(content=question)]})
-        # messages = result["messages"]
+        start = time.time()
+        logger.info({
+            "event": "agent_run_start",
+            "question": question,
+        })
         async with asyncio.timeout(self.settings.agent_timeout_seconds):
             result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
             messages = result["messages"]
-        # for msg in messages:
-        #     print("================")
-        #     print(type(msg))
-        #     print(msg)
+            duration = (
+                time.time() - start
+            ) * 1000
+            
+            logger.info(
+                {
+                    "event":"agent_finished",
+                    "duration_ms":
+                    round(duration,2),
+                }
+            )
 
-        return {
-            "question": question,
-            "steps": extract_steps(messages),
-            "answer": extract_final_answer(messages),
-        }
+            logger.info(
+                {
+                    "event":
+                        "agent_tools",
+                    "tools":
+                        [
+                            step["tool"]
+                            for step in extract_steps(messages)
+                        ]
+                }
+            )
+
+            return {
+                "question": question,
+                "steps": extract_steps(messages),
+                "answer": extract_final_answer(messages),
+            }
 
 
 async def run(question: str) -> dict[str, Any]:
-    return Agent().run(question)
+    return await Agent().run(question)
