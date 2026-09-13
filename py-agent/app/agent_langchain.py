@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
+from .core.config import Settings, get_settings
 from .tool import rank_contracts, search_contract
 
 
@@ -30,23 +31,22 @@ SYSTEM_PROMPT = """
 TOOLS = [search_contract, rank_contracts]
 
 
-def create_default_chat_model():
-    api_key = os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("请设置 DASHSCOPE_API_KEY 或 OPENAI_API_KEY 后运行 LangChain Agent")
+def create_default_chat_model(
+     settings: Settings,
+) -> ChatOpenAI:
+    return ChatOpenAI(
 
-    model = os.environ.get("PY_AGENT_MODEL", "qwen-plus")
-    base_url = os.environ.get("OPENAI_BASE_URL")
-    if os.environ.get("DASHSCOPE_API_KEY") and not base_url:
-        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    request_timeout = float(
-        os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "30")
-    )
-    max_retries = int(
-        os.environ.get("LLM_MAX_RETRIES", "1")
-    )
-    return ChatOpenAI(model=model, api_key=api_key, base_url=base_url, timeout=request_timeout,
-        max_retries=max_retries,)
+    model=settings.agent_model,
+
+    api_key=settings.api_key,
+
+    base_url=settings.base_url,
+
+    timeout=settings.llm_request_timeout_seconds,
+
+    max_retries=settings.llm_max_retries,
+
+)
 
 
 def json_loads(value: Any) -> Any:
@@ -91,29 +91,33 @@ def extract_final_answer(messages: list[Any]) -> str:
 
 
 class Agent:
-    def __init__(self, llm=None, debug: bool = False, timeout_seconds: float | None = None,):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        llm=None, 
+        debug: bool = False, 
+        timeout_seconds: float | None = None,
+    ):
+        self.settings = settings or get_settings()
+        self.llm = llm or create_default_chat_model(
+            self.settings
+        )
         self.llm = llm or create_default_chat_model()
         self.agent = create_agent(
             model=self.llm,
             tools=TOOLS,
             system_prompt=SYSTEM_PROMPT,
-            debug=debug,
-        )
-        self.timeout_seconds = (
-            timeout_seconds
-            if timeout_seconds is not None
-            else float(
-                os.environ.get(
-                    "AGENT_TIMEOUT_SECONDS",
-                    "60",
-                )
-            )
+            debug=(
+                self.settings.debug
+                if debug is None
+                else debug
+            ),
         )
 
     async def run(self, question: str) -> dict[str, Any]:
         # result = self.agent.invoke({"messages": [HumanMessage(content=question)]})
         # messages = result["messages"]
-        async with asyncio.timeout(self.timeout_seconds):
+        async with asyncio.timeout(self.settings.agent_timeout_seconds):
             result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
             messages = result["messages"]
         # for msg in messages:
