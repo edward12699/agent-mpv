@@ -10,6 +10,7 @@ This repository is now organized as a monorepo with two subprojects:
 ### `ts-agent/`
 
 Contains the existing Next.js and tool-driven agent implementation:
+
 - `package.json` and `package-lock.json`
 - `src/` with `agent.ts`, `tools.ts`, `data.ts`, and example CLI runner
 - `app/` with the frontend UI and API route
@@ -18,6 +19,7 @@ Contains the existing Next.js and tool-driven agent implementation:
 ### `py-agent/`
 
 A new Python package with:
+
 - `app/data.py`, `app/models.py`, `app/tools.py`, `app/agent.py`, and `app/main.py`
 - `requirements.txt`
 - `venv/` for the local Python virtual environment
@@ -47,3 +49,20 @@ python app/main.py
 - The TypeScript app still requires Node.js `>=20.6.0`.
 - The Python package is intentionally small and uses the same contract corpus logic in a separate implementation.
 - Keep `ts-agent/` and `py-agent/` independent for their own dependencies and tooling.
+
+## 要同时启动前后端， 只需要 ./scripts/dev.sh
+
+如果要改变变量
+NEXT_PORT=3000 PY_PORT=8001 ./scripts/dev.sh
+
+提供变量
+EXT_PORT 3002 Next.js 端口
+PY_HOST 127.0.0.1 后端监听地址
+PY_PORT 8000 后端端口
+
+### 跑 ./scripts/dev.sh 前，确保已经做过一次：
+
+cd py-agent
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
