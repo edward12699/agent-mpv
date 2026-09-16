@@ -1,6 +1,8 @@
 from typing import Literal, Optional
+from pydantic import BaseModel
 
 AmountConfidence = Literal["exact", "approximate", "unknown"]
+
 
 class Contract:
     def __init__(
@@ -31,3 +33,9 @@ class Contract:
             "year": self.year,
             "rawText": self.raw_text,
         }
+
+class ContractAnswer(BaseModel):
+    contract_id: int | None
+    amount: float | None
+    confidence: str
+    reason: str

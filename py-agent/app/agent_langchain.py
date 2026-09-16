@@ -6,12 +6,13 @@ from typing import Any
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
-
+from app.models import ContractAnswer
 from .core.config import Settings, get_settings
 from .tool import rank_contracts, search_contract
 
 import logging
 import time
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ SYSTEM_PROMPT = """
 
 
 TOOLS = [search_contract, rank_contracts]
+
+
 
 
 def create_default_chat_model(settings: Settings) -> ChatOpenAI:
@@ -108,6 +111,10 @@ class Agent:
             "event": "agent_run_start",
             "question": question,
         })
+        structured_llm = self.llm.with_structured_output(
+            ContractAnswer
+        )
+
         async with asyncio.timeout(self.settings.agent_timeout_seconds):
             result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
             messages = result["messages"]
@@ -135,10 +142,29 @@ class Agent:
                 }
             )
 
+            answer = extract_final_answer(messages)
+
+            structured_answer = await structured_llm.ainvoke(
+                [
+                    HumanMessage(
+                        content=f"""
+                        用户问题：
+                        {question}
+
+                        Agent最终回答：
+                        {answer}
+
+                        请把结果转换成结构化合同分析结果。
+                        """
+                    )
+                ]
+            )
+
             return {
                 "question": question,
                 "steps": extract_steps(messages),
-                "answer": extract_final_answer(messages),
+                "answer": answer,
+                "structured_answer": structured_answer,
             }
 
 

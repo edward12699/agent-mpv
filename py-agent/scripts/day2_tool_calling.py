@@ -8,6 +8,7 @@ from app.agent_langchain import (
 from app.tool import (search_contract,to_jsonable,rank_contracts)
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.core.config import get_settings
+from app.models import ContractAnswer
 
 
 def inspect_model_decision(question: str) -> None:
