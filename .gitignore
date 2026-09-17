@@ -12,6 +12,7 @@ py-agent/venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+py-agent/embedding-demo/chroma_db/
 
 # Next.js build output
 ts-agent/.next/
