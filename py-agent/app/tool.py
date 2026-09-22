@@ -85,7 +85,16 @@ def search_contract(
     compare: Optional[str] = None,
     min_amount: Optional[int] = None,
 ) -> list[dict[str, Any]]:
-    """查询合同数据。用户问题涉及合同、金额、日期、比较、筛选时必须调用。"""
+    """查询结构化合同记录。
+
+    用于：
+    - 年份筛选
+    - 合同主体筛选
+    - 金额筛选
+    - 获取候选合同列表
+
+    不用于查询合同正文条款。
+    """
     results = contracts
 
     if year:
@@ -124,3 +133,28 @@ def rank_contracts(contracts: list[dict[str, Any]], order: str = "desc"):
         "rankedContracts": [c.to_dict() for c in sorted_contracts],
         "topContract": sorted_contracts[0].to_dict() if sorted_contracts else None,
     }
+
+
+@tool
+def search_documents(query: str) -> list[dict[str, Any]]:
+    """查询合同正文和文档内容。
+
+    用于：
+    - 违约责任
+    - 付款条款
+    - 合同义务
+    - 正文细节
+
+    不用于金额排序和结构化筛选。
+    """
+    from .rag import get_retriever
+
+    docs = get_retriever().invoke(query)
+    return [
+        {
+            "content": doc.page_content,
+            "source": doc.metadata.get("source"),
+            "chunk_id": doc.metadata.get("chunk_id"),
+        }
+        for doc in docs
+    ]

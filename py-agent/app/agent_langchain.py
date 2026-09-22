@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from app.models import ContractAnswer
 from .core.config import Settings, get_settings
-from .tool import rank_contracts, search_contract
+from .tool import rank_contracts, search_contract, search_documents
 
 import logging
 import time
@@ -21,19 +21,41 @@ SYSTEM_PROMPT = """
 你是一个合同分析 Agent。
 
 规则：
-1. 涉及合同、金额、日期、筛选、比较的问题，必须先调用 search_contract
-2. 如果用户要找最大金额、最高费用、最高价款，必须在 search_contract 之后调用 rank_contracts
-3. 不要自己从 rawText 里猜金额，优先使用工具返回的 amount 字段
-4. amount 为 null 的合同不能参与金额排序
-5. 如果金额相同，amountConfidence=exact 优先于 approximate
-6. 最终回答必须基于工具返回结果
-7. 严禁在同一轮同时调用 search_contract 和 rank_contracts
-8. rank_contracts 的 contracts 参数必须来自上一轮 search_contract 的工具返回结果
-9. 如果没有拿到 search_contract 返回结果，不允许调用 rank_contracts
+
+1. 如果用户询问合同列表、年份、金额、筛选、排序等结构化信息，
+   优先调用 search_contract。
+
+2. 如果用户询问合同条款、违约责任、付款方式、合同正文内容，
+   调用 search_documents。
+
+3. 如果用户要找金额最大、最高费用、最高价款：
+   必须先 search_contract，再 rank_contracts。
+
+4. 不要自己猜测合同内容。
+   不要自己从 rawText 里猜金额，优先使用工具返回的 amount 字段。
+   amount 为 null 的合同不能参与金额排序。
+   如果金额相同，amountConfidence=exact 优先于 approximate。
+
+5. 最终回答必须基于工具返回的数据。
+
+6. 如果 search_documents 没有找到可靠内容，
+   明确回答“根据当前资料无法确定”。
+
+7. 不允许编造不存在的合同条款。
+
+8. 如果答案来自 search_documents，
+   最终回答必须引用 source 或 chunk_id。
+
+9. 严禁在同一轮同时调用 search_contract 和 rank_contracts。
+   rank_contracts 的 contracts 参数必须来自上一轮 search_contract 的工具返回结果。
+   如果没有拿到 search_contract 返回结果，不允许调用 rank_contracts。
+
+10. 如果问题与合同无关（例如天气），不要调用任何合同工具，
+    直接说明只能处理合同相关问题。
 """
 
 
-TOOLS = [search_contract, rank_contracts]
+TOOLS = [search_contract, rank_contracts, search_documents]
 
 
 
