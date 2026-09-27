@@ -1,28 +1,61 @@
 # agent-mpv monorepo
 
-This repository is now organized as a monorepo with two subprojects:
+This repository contains two subprojects:
 
 - `ts-agent/`: the original Node.js + TypeScript contract analysis agent
-- `py-agent/`: a new Python contract agent package
+- `py-agent/`: Python contract analysis agent (v2 = LangGraph workflow)
 
-## Subproject layout
+## Architecture (py-agent v2)
 
-### `ts-agent/`
+```text
+FastAPI
+  ↓
+AgentService
+  ↓
+LangGraph Contract Agent
+  ├── State: messages / question / route / contracts /
+  │         need_rank / ranked_result / retrieved_docs / answer
+  ↓
+analyze (rule router)
+  ├── structured → search → (rank?) → answer
+  ├── document   → retrieve → answer
+  └── unsupported → answer
+```
 
-Contains the existing Next.js and tool-driven agent implementation:
+LLM 只负责最终解释；流程由 Graph 显式控制。
 
-- `package.json` and `package-lock.json`
-- `src/` with `agent.ts`, `tools.ts`, `data.ts`, and example CLI runner
-- `app/` with the frontend UI and API route
-- `tsconfig.json`, `next.config.mjs`, and related config files
+### Key modules
 
-### `py-agent/`
+```text
+py-agent/app/
+├── api/                 # FastAPI routes / schemas
+├── services/
+│   └── agent_service.py
+├── graph/
+│   ├── state.py
+│   ├── nodes.py
+│   ├── routes.py
+│   └── contract_graph.py
+├── tools/
+│   ├── contract_tools.py
+│   └── document_tools.py
+├── rag/
+│   ├── vector_store.py
+│   └── retriever.py
+└── llm_factory.py
+```
 
-A new Python package with:
+## Capabilities
 
-- `app/data.py`, `app/models.py`, `app/tools.py`, `app/agent.py`, and `app/main.py`
-- `requirements.txt`
-- `venv/` for the local Python virtual environment
+- Contract filtering (`search_contract`)
+- Amount ranking (`rank_contracts`)
+- RAG document search (`retrieve` / Chroma)
+- Citation via `source` / `chunk_id`
+- Checkpoint + `thread_id`
+- Graph streaming (`astream`)
+- Timeout / logging / pytest
+
+Write ops (`delete_contract` / `update_contract` / `send_contract`) are reserved for future human-in-the-loop approval (`interrupt` → `resume`).
 
 ## Run commands
 
@@ -41,28 +74,53 @@ cd py-agent
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-python app/main.py
+uvicorn app.api.main:app --reload --port 8000
+```
+
+### Day 14 验收
+
+```bash
+cd py-agent
+source venv/bin/activate
+PYTHONPATH=. python scripts/day14_contract_agent_v2.py
+```
+
+### Tests
+
+```bash
+cd py-agent
+source venv/bin/activate
+PYTHONPATH=. pytest -q
 ```
 
 ## Notes
 
-- The TypeScript app still requires Node.js `>=20.6.0`.
-- The Python package is intentionally small and uses the same contract corpus logic in a separate implementation.
+- TypeScript app requires Node.js `>=20.6.0`.
 - Keep `ts-agent/` and `py-agent/` independent for their own dependencies and tooling.
 
-## 要同时启动前后端， 只需要 ./scripts/dev.sh
+## 同时启动前后端
 
-如果要改变变量
+```bash
+./scripts/dev.sh
+```
+
+自定义端口：
+
+```bash
 NEXT_PORT=3000 PY_PORT=8001 ./scripts/dev.sh
+```
 
-提供变量
-EXT_PORT 3002 Next.js 端口
-PY_HOST 127.0.0.1 后端监听地址
-PY_PORT 8000 后端端口
+变量：
 
-### 跑 ./scripts/dev.sh 前，确保已经做过一次：
+- `NEXT_PORT`：Next.js 端口
+- `PY_HOST`：后端监听地址
+- `PY_PORT`：后端端口
 
+跑 `./scripts/dev.sh` 前，确保已经做过一次：
+
+```bash
 cd py-agent
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```

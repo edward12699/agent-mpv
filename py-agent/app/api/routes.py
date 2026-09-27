@@ -19,6 +19,7 @@ router = APIRouter(
 @router.post(
     "/chat",
     response_model=ChatResponse,
+    response_model_exclude_none=True,
     status_code=status.HTTP_200_OK,
 )
 async def chat(
@@ -26,7 +27,10 @@ async def chat(
     service: Annotated[AgentService, Depends(get_agent_service)],
 ) -> ChatResponse:
     try:
-        result = await service.chat(request.question)
+        result = await service.chat(
+            request.question,
+            thread_id=request.thread_id,
+        )
         return ChatResponse.model_validate(result)
     except TimeoutError as exc:
         logger.warning("Agent 执行超时，question=%s", request.question)

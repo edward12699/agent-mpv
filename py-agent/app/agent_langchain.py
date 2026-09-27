@@ -1,23 +1,17 @@
-import asyncio
+"""兼容层：LLM 工厂、TOOLS 导出，以及基于 LangGraph 的 Agent 入口。"""
+
+from __future__ import annotations
+
 import json
 from typing import Any
 
+from langchain_core.messages import AIMessage, ToolMessage
 
-from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_openai import ChatOpenAI
-from app.models import ContractAnswer
-from .core.config import Settings, get_settings
-from .tool import rank_contracts, search_contract, search_documents
-from langgraph.graph import (
-    END,
-    START,
-    StateGraph,
-)
-import logging
-import time
-
-logger = logging.getLogger(__name__)
+from app.core.config import Settings, get_settings
+from app.llm_factory import create_default_chat_model
+from app.services.agent_service import AgentService
+from app.tools.contract_tools import rank_contracts, search_contract
+from app.tools.document_tools import search_documents
 
 SYSTEM_PROMPT = """
 你是一个合同分析 Agent。
@@ -34,9 +28,6 @@ SYSTEM_PROMPT = """
    必须先 search_contract，再 rank_contracts。
 
 4. 不要自己猜测合同内容。
-   不要自己从 rawText 里猜金额，优先使用工具返回的 amount 字段。
-   amount 为 null 的合同不能参与金额排序。
-   如果金额相同，amountConfidence=exact 优先于 approximate。
 
 5. 最终回答必须基于工具返回的数据。
 
@@ -48,92 +39,11 @@ SYSTEM_PROMPT = """
 8. 如果答案来自 search_documents，
    最终回答必须引用 source 或 chunk_id。
 
-9. 严禁在同一轮同时调用 search_contract 和 rank_contracts。
-   rank_contracts 的 contracts 参数必须来自上一轮 search_contract 的工具返回结果。
-   如果没有拿到 search_contract 返回结果，不允许调用 rank_contracts。
-
-10. 如果问题与合同无关（例如天气），不要调用任何合同工具，
+9. 如果问题与合同无关（例如天气），不要调用任何合同工具，
     直接说明只能处理合同相关问题。
 """
 
-
 TOOLS = [search_contract, rank_contracts, search_documents]
-
-class ContractState(TypedDict):
-    question: str
-    contracts: list
-    need_rank: bool
-    ranked_result: dict | None
-    answer: str
-
-
-def search_node(
-    state: ContractState,
-) -> dict:
-    question = state["question"]
-    contracts = search_contract.invoke({})
-    need_rank = (
-        "最大" in question
-        or "最高" in question
-    )
-
-    return {
-        "contracts": contracts,
-        "need_rank": need_rank,
-    }
-
-def rank_node(
-    state: ContractState,
-) -> dict:
-    contracts = state["contracts"]
-
-    result = rank_contracts.invoke(
-        {
-            "contracts": contracts,
-            "order": "desc",
-        }
-    )
-
-    return {
-        "ranked_result": result,
-    }
-
-def answer_node(
-    state: ContractState,
-) -> dict:
-    if state["need_rank"]:
-        ranked = state["ranked_result"]
-
-        return {
-            "answer": f"排序结果：{ranked}"
-        }
-
-    contracts = state["contracts"]
-
-    return {
-        "answer": f"共找到 {len(contracts)} 条合同"
-    }
-
-def route_after_search(
-    state: ContractState,
-) -> str:
-    if state["need_rank"]:
-        return "rank"
-
-    return "answer"
-
-builder = StateGraph(
-    ContractState
-)
-
-def create_default_chat_model(settings: Settings) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.agent_model,
-        api_key=settings.api_key,
-        base_url=settings.base_url,
-        timeout=settings.llm_request_timeout_seconds,
-        max_retries=settings.llm_max_retries,
-    )
 
 
 def json_loads(value: Any) -> Any:
@@ -178,130 +88,31 @@ def extract_final_answer(messages: list[Any]) -> str:
 
 
 class Agent:
+    """v2：内部走 LangGraph Contract Agent。"""
+
     def __init__(
         self,
         llm=None,
         settings: Settings | None = None,
         debug: bool | None = None,
+        service: AgentService | None = None,
     ):
         self.settings = settings or get_settings()
         self.llm = llm or create_default_chat_model(self.settings)
-        self.agent = create_agent(
-            model=self.llm,
-            tools=TOOLS,
-            system_prompt=SYSTEM_PROMPT,
-            debug=self.settings.debug if debug is None else debug,
+        self.debug = self.settings.debug if debug is None else debug
+        self.service = service or AgentService(settings=self.settings)
+
+    async def run(
+        self,
+        question: str,
+        thread_id: str = "default",
+    ) -> dict[str, Any]:
+        return await self.service.chat(
+            question=question,
+            thread_id=thread_id,
+            stream_debug=self.debug,
         )
 
-    async def run(self, question: str) -> dict[str, Any]:
-        start = time.time()
-        logger.info({
-            "event": "agent_run_start",
-            "question": question,
-        })
-        structured_llm = self.llm.with_structured_output(
-            ContractAnswer
-        )
 
-        async with asyncio.timeout(self.settings.agent_timeout_seconds):
-
-            builder.add_node(
-                "answer",
-                answer_node,
-            )
-
-            builder.add_node(
-                "search",
-                search_node,
-            )
-
-            builder.add_node(
-                "rank",
-                rank_node,
-            )
-
-            builder.add_edge(
-                START,
-                "search",
-            )
-            builder.add_conditional_edges(
-                "search",
-                route_after_search,
-                {
-                    "rank": "rank",
-                    "answer": "answer",
-                },
-            )
-            builder.add_edge(
-                "rank",
-                "answer",
-            )
-            builder.add_edge(
-                "search",
-                "answer",
-            )
-
-            builder.add_edge(
-                "answer",
-                END,
-            )
-            graph = builder.compile()
-            result = graph.invoke(
-                {
-                    "question": "你好",
-                    "answer": "",
-                }
-            )
-
-            duration = (
-                time.time() - start
-            ) * 1000
-            
-            logger.info(
-                {
-                    "event":"agent_finished",
-                    "duration_ms":
-                    round(duration,2),
-                }
-            )
-
-            logger.info(
-                {
-                    "event":
-                        "agent_tools",
-                    "tools":
-                        [
-                            step["tool"]
-                            for step in extract_steps(messages)
-                        ]
-                }
-            )
-
-            answer = extract_final_answer(messages)
-
-            structured_answer = await structured_llm.ainvoke(
-                [
-                    HumanMessage(
-                        content=f"""
-                        用户问题：
-                        {question}
-
-                        Agent最终回答：
-                        {answer}
-
-                        请把结果转换成结构化合同分析结果。
-                        """
-                    )
-                ]
-            )
-
-            return {
-                "question": question,
-                "steps": extract_steps(messages),
-                "answer": answer,
-                "structured_answer": structured_answer,
-            }
-
-
-async def run(question: str) -> dict[str, Any]:
-    return await Agent().run(question)
+async def run(question: str, thread_id: str = "default") -> dict[str, Any]:
+    return await Agent().run(question, thread_id=thread_id)

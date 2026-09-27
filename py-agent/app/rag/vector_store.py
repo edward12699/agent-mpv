@@ -1,6 +1,7 @@
-"""合同文档向量检索。给 search_documents 工具使用。"""
+"""向量库封装。"""
 
-from functools import lru_cache
+from __future__ import annotations
+
 from pathlib import Path
 
 from langchain_chroma import Chroma
@@ -8,13 +9,18 @@ from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from .core.config import get_settings
+from app.core.config import get_settings
 
 
 CONTRACTS_PATH = (
-    Path(__file__).resolve().parents[1] / "embedding-demo" / "data" / "contracts.txt"
+    Path(__file__).resolve().parents[2]
+    / "embedding-demo"
+    / "data"
+    / "contracts.txt"
 )
-PERSIST_DIR = Path(__file__).resolve().parents[1] / "embedding-demo" / "chroma_db"
+PERSIST_DIR = (
+    Path(__file__).resolve().parents[2] / "embedding-demo" / "chroma_db"
+)
 EMBEDDING_MODEL = "text-embedding-v3"
 COLLECTION_NAME = "contracts"
 
@@ -49,21 +55,21 @@ def load_chunks(path: Path = CONTRACTS_PATH) -> list[Document]:
     return chunks
 
 
-@lru_cache
-def get_retriever():
-    embeddings = create_embeddings()
+def get_or_create_vector_store(
+    *,
+    embeddings: OpenAIEmbeddings | None = None,
+) -> Chroma:
+    embeddings = embeddings or create_embeddings()
     if not PERSIST_DIR.exists():
         chunks = load_chunks()
-        vector_store = Chroma.from_documents(
+        return Chroma.from_documents(
             documents=chunks,
             embedding=embeddings,
             collection_name=COLLECTION_NAME,
             persist_directory=str(PERSIST_DIR),
         )
-    else:
-        vector_store = Chroma(
-            collection_name=COLLECTION_NAME,
-            embedding_function=embeddings,
-            persist_directory=str(PERSIST_DIR),
-        )
-    return vector_store.as_retriever(search_kwargs={"k": 3})
+    return Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(PERSIST_DIR),
+    )

@@ -11,7 +11,11 @@ from app.api.main import app
 class SuccessAgentService:
     """模拟正常运行的 Agent Service。"""
 
-    async def chat(self, question: str) -> dict[str, Any]:
+    async def chat(
+        self,
+        question: str,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "question": question,
             "steps": [
@@ -36,14 +40,22 @@ class SuccessAgentService:
 class ErrorAgentService:
     """模拟 Agent Service 发生普通异常。"""
 
-    async def chat(self, question: str) -> dict[str, Any]:
+    async def chat(
+        self,
+        question: str,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
         raise RuntimeError("模拟模型服务异常")
 
 
 class TimeoutAgentService:
     """模拟 Agent Service 整体执行超时。"""
 
-    async def chat(self, question: str) -> dict[str, Any]:
+    async def chat(
+        self,
+        question: str,
+        thread_id: str | None = None,
+    ) -> dict[str, Any]:
         raise TimeoutError("模拟 Agent 超时")
 
 
