@@ -9,13 +9,15 @@ from langchain_openai import ChatOpenAI
 from app.models import ContractAnswer
 from .core.config import Settings, get_settings
 from .tool import rank_contracts, search_contract, search_documents
-
+from langgraph.graph import (
+    END,
+    START,
+    StateGraph,
+)
 import logging
 import time
 
-
 logger = logging.getLogger(__name__)
-
 
 SYSTEM_PROMPT = """
 你是一个合同分析 Agent。
@@ -57,8 +59,72 @@ SYSTEM_PROMPT = """
 
 TOOLS = [search_contract, rank_contracts, search_documents]
 
+class ContractState(TypedDict):
+    question: str
+    contracts: list
+    need_rank: bool
+    ranked_result: dict | None
+    answer: str
 
 
+def search_node(
+    state: ContractState,
+) -> dict:
+    question = state["question"]
+    contracts = search_contract.invoke({})
+    need_rank = (
+        "最大" in question
+        or "最高" in question
+    )
+
+    return {
+        "contracts": contracts,
+        "need_rank": need_rank,
+    }
+
+def rank_node(
+    state: ContractState,
+) -> dict:
+    contracts = state["contracts"]
+
+    result = rank_contracts.invoke(
+        {
+            "contracts": contracts,
+            "order": "desc",
+        }
+    )
+
+    return {
+        "ranked_result": result,
+    }
+
+def answer_node(
+    state: ContractState,
+) -> dict:
+    if state["need_rank"]:
+        ranked = state["ranked_result"]
+
+        return {
+            "answer": f"排序结果：{ranked}"
+        }
+
+    contracts = state["contracts"]
+
+    return {
+        "answer": f"共找到 {len(contracts)} 条合同"
+    }
+
+def route_after_search(
+    state: ContractState,
+) -> str:
+    if state["need_rank"]:
+        return "rank"
+
+    return "answer"
+
+builder = StateGraph(
+    ContractState
+)
 
 def create_default_chat_model(settings: Settings) -> ChatOpenAI:
     return ChatOpenAI(
@@ -138,8 +204,55 @@ class Agent:
         )
 
         async with asyncio.timeout(self.settings.agent_timeout_seconds):
-            result = await self.agent.ainvoke({"messages": [HumanMessage(content=question)]})
-            messages = result["messages"]
+
+            builder.add_node(
+                "answer",
+                answer_node,
+            )
+
+            builder.add_node(
+                "search",
+                search_node,
+            )
+
+            builder.add_node(
+                "rank",
+                rank_node,
+            )
+
+            builder.add_edge(
+                START,
+                "search",
+            )
+            builder.add_conditional_edges(
+                "search",
+                route_after_search,
+                {
+                    "rank": "rank",
+                    "answer": "answer",
+                },
+            )
+            builder.add_edge(
+                "rank",
+                "answer",
+            )
+            builder.add_edge(
+                "search",
+                "answer",
+            )
+
+            builder.add_edge(
+                "answer",
+                END,
+            )
+            graph = builder.compile()
+            result = graph.invoke(
+                {
+                    "question": "你好",
+                    "answer": "",
+                }
+            )
+
             duration = (
                 time.time() - start
             ) * 1000
